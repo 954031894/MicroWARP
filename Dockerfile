@@ -51,13 +51,22 @@ FROM alpine:3.21
 RUN apk add --no-cache \
         wireguard-tools \
         iptables \
+        iptables-legacy \
         iproute2 \
         curl \
         wget \
         ca-certificates \
         openresolv \
     && update-ca-certificates \
-    && rm -rf /var/cache/apk/*
+    && rm -rf /var/cache/apk/* \
+    && rm -f /sbin/iptables /sbin/iptables-save /sbin/iptables-restore \
+    && ln -s /sbin/iptables-legacy /sbin/iptables \
+    && ln -s /sbin/iptables-legacy-save /sbin/iptables-save \
+    && ln -s /sbin/iptables-legacy-restore /sbin/iptables-restore \
+    && rm -f /sbin/ip6tables /sbin/ip6tables-save /sbin/ip6tables-restore \
+    && ln -s /sbin/ip6tables-legacy /sbin/ip6tables \
+    && ln -s /sbin/ip6tables-legacy-save /sbin/ip6tables-save \
+    && ln -s /sbin/ip6tables-legacy-restore /sbin/ip6tables-restore
 
 COPY --from=microsocks-builder /src/microsocks /usr/local/bin/microsocks
 COPY --from=usque-downloader /usr/local/bin/usque /usr/local/bin/usque
