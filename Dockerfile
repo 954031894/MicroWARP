@@ -58,7 +58,7 @@ RUN apk add --no-cache \
         ca-certificates \
         openresolv \
     && update-ca-certificates \
-    && rm -rf /var/cache/apk/* \
+    && rm -rf /var/cache/apk/*
 
 COPY --from=microsocks-builder /src/microsocks /usr/local/bin/microsocks
 COPY --from=usque-downloader /usr/local/bin/usque /usr/local/bin/usque
