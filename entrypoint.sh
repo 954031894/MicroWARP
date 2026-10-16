@@ -352,8 +352,75 @@ sanitize_config() {
     fi
 }
 
+# 强制 iptables 切换到 legacy(xtables) 后端并隐藏 nft（NAS 内核常缺 nf_tables）。
+force_legacy_iptables() {
+    legacy_multi="$(command -v xtables-legacy-multi 2>/dev/null || true)"
+    if [ -z "$legacy_multi" ]; then
+        for p in /sbin/xtables-legacy-multi /usr/sbin/xtables-legacy-multi /usr/bin/xtables-legacy-multi; do
+            if [ -x "$p" ]; then legacy_multi="$p"; break; fi
+        done
+    fi
+    if [ -z "$legacy_multi" ]; then
+        warn "未找到 xtables-legacy-multi，无法强制 legacy 后端"
+        return 0
+    fi
+    for name in iptables iptables-save iptables-restore ip6tables ip6tables-save ip6tables-restore; do
+        target="$(command -v "$name" 2>/dev/null || true)"
+        dir="${target%/*}"
+        if [ -z "$target" ] || [ "$dir" = "$target" ]; then dir=/sbin; fi
+        ln -sf "$legacy_multi" "$dir/$name" 2>/dev/null || true
+    done
+    nft_bin="$(command -v nft 2>/dev/null || true)"
+    if [ -n "$nft_bin" ]; then
+        mv "$nft_bin" "${nft_bin}.microwarp-disabled" 2>/dev/null || rm -f "$nft_bin" 2>/dev/null || true
+    fi
+    log "已强制 iptables 使用 legacy 后端 (${legacy_multi})"
+}
+
+# 在 wg-quick 官方覆盖点重写 add_default()，去掉 raw 表与 comment 依赖。
+patch_wg_quick_add_default() {
+    wg_quick_bin="$1"
+    grep -q 'function override insertion point' "$wg_quick_bin" 2>/dev/null || return 0
+    grep -q 'MicroWARP-raw-free' "$wg_quick_bin" 2>/dev/null && return 0
+    override_src="$(mktemp)"
+    cat > "$override_src" <<'MICROWARP_OVERRIDE'
+
+# MicroWARP-raw-free: 内核无 iptable_raw（如威联通 QTS）。
+add_default() {
+	local table line
+	if ! get_fwmark table; then
+		table=51820
+		while [[ -n $(ip -4 route show table $table 2>/dev/null) || -n $(ip -6 route show table $table 2>/dev/null) ]]; do
+			((table++))
+		done
+		cmd wg set "$INTERFACE" fwmark $table
+	fi
+	local proto=-4 iptables=iptables pf=ip
+	[[ $1 == *:* ]] && proto=-6 iptables=ip6tables pf=ip6
+	cmd ip $proto rule add not fwmark $table table $table
+	cmd ip $proto rule add table main suppress_prefixlength 0
+	cmd ip $proto route add "$1" dev "$INTERFACE" table $table
+
+	local restore=$'*mangle\n'
+	printf -v restore '%s-I POSTROUTING -m mark --mark %d -p udp -j CONNMARK --save-mark\n-I PREROUTING -p udp -j CONNMARK --restore-mark\nCOMMIT\n' "$restore" $table
+	if [[ $proto == -4 ]]; then
+		cmd sysctl -q net.ipv4.conf.all.src_valid_mark=1 || true
+	fi
+	if echo -n "$restore" | cmd $iptables-restore -n; then
+		HAVE_SET_FIREWALL=1
+	else
+		echo "[!] 跳过 $pf 标记规则：内核 netfilter 表不可用" >&2
+	fi
+	return 0
+}
+MICROWARP_OVERRIDE
+    sed -i "/function override insertion point/r $override_src" "$wg_quick_bin" 2>/dev/null || true
+    rm -f "$override_src"
+}
+
 # Alpine wg-quick may hard-fail on src_valid_mark; neutralize safely.
 patch_wg_quick() {
+    force_legacy_iptables
     wg_quick_bin="$(command -v wg-quick || true)"
     if [ -n "$wg_quick_bin" ] && [ -f "$wg_quick_bin" ] && [ -w "$wg_quick_bin" ]; then
         # Pre-set the sysctl ourselves so semantics are preserved when possible
@@ -366,6 +433,8 @@ patch_wg_quick() {
         fi
         # Remove the hard-failing line from wg-quick (idempotent)
         sed -i '/src_valid_mark/d' "$wg_quick_bin" 2>/dev/null || true
+        # Drop raw-table firewall rules wg-quick would otherwise install
+        patch_wg_quick_add_default "$wg_quick_bin"
     fi
 }
 
