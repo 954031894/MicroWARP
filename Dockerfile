@@ -59,14 +59,14 @@ RUN apk add --no-cache \
         openresolv \
     && update-ca-certificates \
     && rm -rf /var/cache/apk/* \
-    && rm -f /sbin/iptables /sbin/iptables-save /sbin/iptables-restore \
-    && ln -s /sbin/iptables-legacy /sbin/iptables \
-    && ln -s /sbin/iptables-legacy-save /sbin/iptables-save \
-    && ln -s /sbin/iptables-legacy-restore /sbin/iptables-restore \
-    && rm -f /sbin/ip6tables /sbin/ip6tables-save /sbin/ip6tables-restore \
-    && ln -s /sbin/ip6tables-legacy /sbin/ip6tables \
-    && ln -s /sbin/ip6tables-legacy-save /sbin/ip6tables-save \
-    && ln -s /sbin/ip6tables-legacy-restore /sbin/ip6tables-restore
+    && rm -f /usr/sbin/iptables /usr/sbin/iptables-save /usr/sbin/iptables-restore \
+    && ln -sf /usr/sbin/iptables-legacy /usr/sbin/iptables \
+    && ln -sf /usr/sbin/iptables-legacy-save /usr/sbin/iptables-save \
+    && ln -sf /usr/sbin/iptables-legacy-restore /usr/sbin/iptables-restore \
+    && rm -f /usr/sbin/ip6tables /usr/sbin/ip6tables-save /usr/sbin/ip6tables-restore \
+    && ln -sf /usr/sbin/ip6tables-legacy /usr/sbin/ip6tables \
+    && ln -sf /usr/sbin/ip6tables-legacy-save /usr/sbin/ip6tables-save \
+    && ln -sf /usr/sbin/ip6tables-legacy-restore /usr/sbin/ip6tables-restore
 
 COPY --from=microsocks-builder /src/microsocks /usr/local/bin/microsocks
 COPY --from=usque-downloader /usr/local/bin/usque /usr/local/bin/usque
